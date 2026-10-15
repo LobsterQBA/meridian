@@ -155,6 +155,11 @@ class ChangepointInfo:
     return indices
 
   @property
+  def is_changepoint_channel(self) -> np.ndarray:
+    """Whether each channel of the type has changepoints, shape `(n_total,)`."""
+    return np.isin(np.arange(self.n_channels_total), self.channel_indices)
+
+  @property
   def last_interval_one_hot(self) -> np.ndarray:
     """One-hot `(n_channels, max_intervals)` of each channel's last interval."""
     one_hot = np.zeros(self.mask.shape, dtype=backend.np_float_dtype)
@@ -365,3 +370,20 @@ def merge_channels(
       backend.to_tensor(info.merge_indices),
       axis=-1,
   )
+
+
+def fill_channels(
+    x: backend.Tensor, *, value: float, info: ChangepointInfo
+) -> backend.Tensor:
+  """Sets the columns of channels with changepoints to `value`.
+
+  Args:
+    x: A tensor with all channels of the type on its last axis.
+    value: The value for the channels with changepoints.
+    info: The `ChangepointInfo` of the channel type.
+
+  Returns:
+    `x` with the columns of channels with changepoints set to `value`.
+  """
+  filler = backend.gather(x, backend.to_tensor(info.channel_indices), axis=-1)
+  return merge_channels(x=x, sub=backend.zeros_like(filler) + value, info=info)

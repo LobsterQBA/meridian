@@ -584,17 +584,17 @@ def _joint_dist_base_logic(
               slope_m=slope_m,
           )
       )
-      beta_m = model_equations.calculate_beta_x(
-          is_non_media=False,
-          incremental_outcome_x=incremental_outcome_m,
-          linear_predictor_counterfactual_difference=linear_predictor_counterfactual_difference,
-          eta_x=eta_m,
-          beta_gx_dev=beta_gm_dev,
-      )
-      if media_time_varying is not None:
-        beta_m = model_equations._merge_time_varying_beta_x(  # pylint: disable=protected-access
+      if media_time_varying is None:
+        beta_m = model_equations.calculate_beta_x(
+            is_non_media=False,
+            incremental_outcome_x=incremental_outcome_m,
+            linear_predictor_counterfactual_difference=linear_predictor_counterfactual_difference,
+            eta_x=eta_m,
+            beta_gx_dev=beta_gm_dev,
+        )
+      else:
+        beta_m = model_equations._calculate_beta_x_with_changepoints(  # pylint: disable=protected-access
             changepoint_info=media_time_varying.changepoint_info,
-            beta_x=beta_m,
             incremental_outcome_x=incremental_outcome_m,
             linear_predictor_counterfactual_difference=(
                 linear_predictor_counterfactual_difference
@@ -608,10 +608,11 @@ def _joint_dist_base_logic(
         yield backend.tfd.Deterministic(beta_m, name=constants.BETA_M)
 
     beta_eta_combined = beta_m + eta_m * beta_gm_dev
-    beta_gm = (
-        beta_eta_combined
-        if media_effects_dist == constants.MEDIA_EFFECTS_NORMAL
-        else backend.exp(beta_eta_combined)
+    beta_gm = model_equations._coefficients_from_random_effects(  # pylint: disable=protected-access
+        beta_eta_combined,
+        media_time_varying.changepoint_info
+        if media_time_varying is not None
+        else None,
     )
     if yield_deterministics:
       yield backend.tfd.Deterministic(beta_gm, name=constants.BETA_GM)
@@ -681,17 +682,17 @@ def _joint_dist_base_logic(
               slope_rf=slope_rf,
           )
       )
-      beta_rf = model_equations.calculate_beta_x(
-          is_non_media=False,
-          incremental_outcome_x=incremental_outcome_rf,
-          linear_predictor_counterfactual_difference=linear_predictor_counterfactual_difference,
-          eta_x=eta_rf,
-          beta_gx_dev=beta_grf_dev,
-      )
-      if rf_time_varying is not None:
-        beta_rf = model_equations._merge_time_varying_beta_x(  # pylint: disable=protected-access
+      if rf_time_varying is None:
+        beta_rf = model_equations.calculate_beta_x(
+            is_non_media=False,
+            incremental_outcome_x=incremental_outcome_rf,
+            linear_predictor_counterfactual_difference=linear_predictor_counterfactual_difference,
+            eta_x=eta_rf,
+            beta_gx_dev=beta_grf_dev,
+        )
+      else:
+        beta_rf = model_equations._calculate_beta_x_with_changepoints(  # pylint: disable=protected-access
             changepoint_info=rf_time_varying.changepoint_info,
-            beta_x=beta_rf,
             incremental_outcome_x=incremental_outcome_rf,
             linear_predictor_counterfactual_difference=(
                 linear_predictor_counterfactual_difference
@@ -705,10 +706,11 @@ def _joint_dist_base_logic(
         yield backend.tfd.Deterministic(beta_rf, name=constants.BETA_RF)
 
     beta_eta_combined = beta_rf + eta_rf * beta_grf_dev
-    beta_grf = (
-        beta_eta_combined
-        if media_effects_dist == constants.MEDIA_EFFECTS_NORMAL
-        else backend.exp(beta_eta_combined)
+    beta_grf = model_equations._coefficients_from_random_effects(  # pylint: disable=protected-access
+        beta_eta_combined,
+        rf_time_varying.changepoint_info
+        if rf_time_varying is not None
+        else None,
     )
     if yield_deterministics:
       yield backend.tfd.Deterministic(beta_grf, name=constants.BETA_GRF)
@@ -967,6 +969,7 @@ class PosteriorMCMCSampler:
   def _get_joint_dist_unpinned(self) -> backend.tfd.Distribution:
     """Builds a `JointDistributionCoroutineAutoBatched` function for MCMC."""
     self._model_context.populate_cached_properties()
+    self._model_context._check_changepoint_prior_types()  # pylint: disable=protected-access
     return backend.tfd.JointDistributionCoroutineAutoBatched(
         self._joint_dist_unpinned_fn
     )
@@ -974,6 +977,7 @@ class PosteriorMCMCSampler:
   def _get_joint_dist_sampling_unpinned(self) -> backend.tfd.Distribution:
     """Builds a sampling-optimized `JointDistributionCoroutineAutoBatched`."""
     self._model_context.populate_cached_properties()
+    self._model_context._check_changepoint_prior_types()  # pylint: disable=protected-access
     return backend.tfd.JointDistributionCoroutineAutoBatched(
         self._joint_dist_sampling_fn
     )
